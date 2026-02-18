@@ -1,0 +1,869 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Chewy's Health Map</title>
+  <style>
+    *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #0d1117;
+      height: 100vh;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .topbar {
+      flex-shrink: 0;
+      height: 52px;
+      background: #161b22;
+      border-bottom: 1px solid rgba(255,255,255,0.07);
+      display: flex;
+      align-items: center;
+      padding: 0 24px;
+      gap: 12px;
+      z-index: 30;
+    }
+    .topbar-paw { font-size: 22px; }
+    .topbar h1 { font-size: 17px; font-weight: 700; color: #fff; }
+    .topbar-age {
+      font-size: 12px;
+      color: rgba(255,255,255,0.4);
+      background: rgba(255,255,255,0.06);
+      padding: 3px 10px;
+      border-radius: 20px;
+    }
+    .topbar-hint { margin-left: auto; font-size: 12px; color: rgba(255,255,255,0.25); }
+    .topbar-debug { font-size: 11px; color: rgba(255,255,255,0.2); }
+
+    .main {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+      padding: 20px;
+    }
+
+    .photo-wrapper {
+      position: relative;
+      display: inline-block;
+      line-height: 0;
+      border-radius: 14px;
+      overflow: visible;
+      box-shadow: 0 24px 64px rgba(0,0,0,0.65);
+    }
+    .photo-wrapper img {
+      display: block;
+      max-height: calc(100vh - 96px);
+      max-width: calc(100vw - 40px);
+      width: auto;
+      height: auto;
+      border-radius: 14px;
+    }
+
+    /* Hotspots */
+    .hotspot {
+      position: absolute;
+      width: 26px;
+      height: 26px;
+      border-radius: 50%;
+      background: rgba(255,255,255,0.85);
+      border: 2.5px solid #fff;
+      cursor: pointer;
+      transform: translate(-50%, -50%);
+      transition: transform 0.18s ease, background 0.18s ease, box-shadow 0.18s ease;
+      animation: hsPulse 2.8s ease-in-out infinite;
+      z-index: 10;
+    }
+    .hotspot::after {
+      content: attr(data-label);
+      position: absolute;
+      bottom: calc(100% + 9px);
+      left: 50%;
+      transform: translateX(-50%);
+      background: rgba(8,8,12,0.92);
+      color: #fff;
+      padding: 4px 11px;
+      border-radius: 20px;
+      font-size: 11px;
+      font-weight: 600;
+      white-space: nowrap;
+      letter-spacing: 0.4px;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.15s;
+    }
+    .hotspot:hover::after, .hotspot.active::after { opacity: 1; }
+    .hotspot:hover, .hotspot.active {
+      background: #c62828;
+      border-color: #fff;
+      transform: translate(-50%, -50%) scale(1.3);
+      animation: none;
+      box-shadow: 0 0 0 5px rgba(198,40,40,0.3);
+    }
+    @keyframes hsPulse {
+      0%, 100% { box-shadow: 0 0 0 0 rgba(255,255,255,0.6); }
+      55%       { box-shadow: 0 0 0 10px rgba(255,255,255,0); }
+    }
+
+    /* Debug */
+    .photo-wrapper.debug-mode { cursor: crosshair; }
+    #debugLabel {
+      position: fixed; bottom: 16px; left: 50%; transform: translateX(-50%);
+      background: rgba(8,8,12,0.9); color: #facc15; font-size: 12px; font-weight: 600;
+      padding: 6px 14px; border-radius: 20px; border: 1px solid rgba(250,204,21,0.3);
+      pointer-events: none; opacity: 0; transition: opacity 0.2s; z-index: 100;
+    }
+    #debugLabel.visible { opacity: 1; }
+
+    /* Info panel — fixed overlay */
+    .info-panel {
+      position: fixed; right: 0; top: 52px;
+      width: 440px; height: calc(100vh - 52px);
+      background: #161b22; border-left: 1px solid rgba(255,255,255,0.07);
+      display: flex; flex-direction: column;
+      transform: translateX(100%);
+      transition: transform 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+      z-index: 50; box-shadow: -8px 0 32px rgba(0,0,0,0.4);
+    }
+    .info-panel.open { transform: translateX(0); }
+
+    .panel-header {
+      flex-shrink: 0; background: #c62828;
+      padding: 20px 20px 16px; position: relative;
+    }
+    .panel-header h2 { font-size: 23px; font-weight: 800; color: #fff; line-height: 1.1; padding-right: 36px; }
+    .panel-header p { font-size: 12px; color: rgba(255,255,255,0.72); margin-top: 4px; font-style: italic; }
+    .close-btn {
+      position: absolute; top: 13px; right: 13px;
+      width: 30px; height: 30px; background: rgba(255,255,255,0.18);
+      border: none; border-radius: 50%; color: #fff; font-size: 14px;
+      cursor: pointer; display: flex; align-items: center; justify-content: center;
+      transition: background 0.15s;
+    }
+    .close-btn:hover { background: rgba(255,255,255,0.32); }
+
+    .panel-body { flex: 1; overflow-y: auto; padding: 18px; }
+    .panel-body::-webkit-scrollbar { width: 4px; }
+    .panel-body::-webkit-scrollbar-track { background: transparent; }
+    .panel-body::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 2px; }
+
+    /* Chewy status card */
+    .chewy-card { border-radius: 10px; padding: 12px 14px; margin-bottom: 16px; border-left: 4px solid; }
+    .chewy-card.green  { background: rgba(34,197,94,0.07);  border-color: #22c55e; }
+    .chewy-card.yellow { background: rgba(234,179,8,0.08);  border-color: #eab308; }
+    .chewy-card.red    { background: rgba(239,68,68,0.09);  border-color: #ef4444; }
+    .chewy-card-header { display: flex; align-items: center; gap: 7px; margin-bottom: 7px; }
+    .chewy-card-header .card-label { font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.9px; }
+    .chewy-card.green  .card-label { color: #4ade80; }
+    .chewy-card.yellow .card-label { color: #facc15; }
+    .chewy-card.red    .card-label { color: #f87171; }
+    .chewy-card p { font-size: 13px; line-height: 1.65; color: rgba(255,255,255,0.72); }
+
+    /* Welcome */
+    .welcome { flex: 1; display: flex; flex-direction: column; align-items: center; text-align: center; padding: 32px 28px 28px; gap: 0; overflow-y: auto; }
+    .welcome-icon { font-size: 48px; margin-bottom: 12px; }
+    .welcome h2 { font-size: 20px; font-weight: 700; color: #fff; margin-bottom: 8px; }
+    .welcome-hint { font-size: 13px; color: rgba(255,255,255,0.38); line-height: 1.6; max-width: 260px; margin-bottom: 24px; }
+    .profile-card { width: 100%; background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.08); border-radius: 12px; padding: 16px; text-align: left; margin-bottom: 16px; }
+    .profile-card-title { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; color: rgba(255,255,255,0.3); margin-bottom: 12px; }
+    .profile-row { display: flex; justify-content: space-between; align-items: center; padding: 6px 0; border-bottom: 1px solid rgba(255,255,255,0.05); }
+    .profile-row:last-child { border-bottom: none; }
+    .profile-row .label { font-size: 12px; color: rgba(255,255,255,0.4); }
+    .profile-row .value { font-size: 13px; font-weight: 600; color: rgba(255,255,255,0.85); text-align: right; max-width: 60%; }
+    .value.good { color: #4ade80; }
+    .value.caution { color: #facc15; }
+    .priority-note { width: 100%; background: rgba(239,68,68,0.08); border: 1px solid rgba(239,68,68,0.25); border-radius: 10px; padding: 12px 14px; text-align: left; }
+    .priority-note-title { font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.8px; color: #f87171; margin-bottom: 6px; }
+    .priority-note p { font-size: 13px; color: rgba(255,255,255,0.65); line-height: 1.6; }
+
+    /* Collapsible sections */
+    .section { margin-bottom: 12px; }
+    .section-toggle { display: flex; align-items: center; gap: 10px; cursor: pointer; user-select: none; padding-bottom: 9px; }
+    .section-icon-box { width: 33px; height: 33px; background: rgba(255,255,255,0.06); border-radius: 9px; display: flex; align-items: center; justify-content: center; font-size: 16px; flex-shrink: 0; }
+    .section-title { font-size: 10.5px; font-weight: 700; letter-spacing: 1.1px; text-transform: uppercase; color: rgba(255,255,255,0.82); }
+    .section-chevron { margin-left: auto; color: rgba(255,255,255,0.28); font-size: 12px; transition: transform 0.2s; }
+    .section-toggle.collapsed .section-chevron { transform: rotate(-90deg); }
+    .section-body { background: rgba(255,255,255,0.025); border: 1px solid rgba(255,255,255,0.065); border-radius: 10px; padding: 14px; }
+    .section-body.collapsed { display: none; }
+
+    .sci-p { font-size: 13px; line-height: 1.72; color: rgba(255,255,255,0.65); margin-bottom: 10px; }
+    .sci-p:last-child { margin-bottom: 0; }
+
+    .care-list { list-style: none; }
+    .care-list li { font-size: 13px; line-height: 1.6; color: rgba(255,255,255,0.65); padding: 6px 0 6px 18px; position: relative; border-bottom: 1px solid rgba(255,255,255,0.04); }
+    .care-list li:last-child { border-bottom: none; }
+    .care-list li::before { content: "→"; position: absolute; left: 0; color: #c62828; font-size: 11px; top: 7px; }
+
+    .warn-card { background: rgba(198,40,40,0.07); border-left: 3px solid #c62828; border-radius: 0 8px 8px 0; padding: 9px 11px; margin-bottom: 7px; }
+    .warn-card:last-child { margin-bottom: 0; }
+    .warn-name { display: block; font-size: 12px; font-weight: 700; color: #ff8585; margin-bottom: 3px; }
+    .warn-desc { font-size: 12.5px; color: rgba(255,255,255,0.58); line-height: 1.55; }
+
+    /* Longevity items (heart section) */
+    .longevity-item { padding: 10px 0; border-bottom: 1px solid rgba(255,255,255,0.05); }
+    .longevity-item:last-child { border-bottom: none; padding-bottom: 0; }
+    .longevity-badge {
+      display: inline-block; font-size: 9.5px; font-weight: 700; padding: 2px 8px;
+      border-radius: 10px; margin-bottom: 5px; text-transform: uppercase; letter-spacing: 0.5px;
+    }
+    .longevity-badge.proven     { background: rgba(34,197,94,0.14);  color: #4ade80; }
+    .longevity-badge.available  { background: rgba(99,102,241,0.15); color: #a5b4fc; }
+    .longevity-badge.trial      { background: rgba(234,179,8,0.12);  color: #facc15; }
+    .longevity-badge.enroll     { background: rgba(56,189,248,0.12); color: #7dd3fc; }
+    .longevity-item-name { font-size: 13px; font-weight: 600; color: rgba(255,255,255,0.88); margin-bottom: 4px; }
+    .longevity-item-desc { font-size: 12.5px; color: rgba(255,255,255,0.58); line-height: 1.6; }
+  </style>
+</head>
+<body>
+
+  <div class="topbar">
+    <span class="topbar-paw">🐾</span>
+    <h1>Chewy's Health Map</h1>
+    <span class="topbar-age" id="topbarAge">Loading…</span>
+    <span class="topbar-hint">Click a glowing dot to explore</span>
+    <span class="topbar-debug" id="debugIndicator"></span>
+  </div>
+
+  <div class="main">
+    <div class="photo-wrapper" id="photoWrapper">
+      <img src="chewy.jpg" alt="Chewy in the snow" id="chewyPhoto" />
+
+      <!--
+        Positions: left/top as % of rendered image (3024 × 4032 px, 3:4 portrait).
+        Press D to enable coordinate helper for fine-tuning.
+      -->
+      <div class="hotspot" data-part="brain"  data-label="Brain & Cognition"  style="left:49%; top:14%"></div>
+      <div class="hotspot" data-part="eyes"   data-label="Eyes"               style="left:49%; top:27%"></div>
+      <div class="hotspot" data-part="ears"   data-label="Ears"               style="left:27%; top:19%"></div>
+      <div class="hotspot" data-part="nose"   data-label="Nose"               style="left:49%; top:37%"></div>
+      <div class="hotspot" data-part="mouth"  data-label="Teeth & Mouth"      style="left:49%; top:43%"></div>
+      <div class="hotspot" data-part="heart"  data-label="Heart & Longevity"  style="left:44%; top:52%"></div>
+      <div class="hotspot" data-part="coat"   data-label="Coat & Skin"        style="left:57%; top:58%"></div>
+      <div class="hotspot" data-part="joints" data-label="Joints & Hips"      style="left:49%; top:72%"></div>
+      <div class="hotspot" data-part="paws"   data-label="Paws"               style="left:36%; top:82%"></div>
+    </div>
+  </div>
+
+  <div class="info-panel" id="infoPanel">
+    <div class="welcome" id="welcomeScreen">
+      <div class="welcome-icon">🐾</div>
+      <h2>Chewy's Health Guide</h2>
+      <p class="welcome-hint">Click any glowing dot on Chewy's photo to get a scientific breakdown, personalized care tips, and what to watch for as he ages.</p>
+
+      <div class="profile-card">
+        <div class="profile-card-title">Chewy's Profile</div>
+        <div class="profile-row"><span class="label">Age</span><span class="value good" id="profileAge">—</span></div>
+        <div class="profile-row"><span class="label">Next Birthday</span><span class="value" id="profileBirthday">May 5 🎂</span></div>
+        <div class="profile-row"><span class="label">Weight</span><span class="value good">23 lbs ✓ Target</span></div>
+        <div class="profile-row"><span class="label">Exercise</span><span class="value good">High — 2+ walks/day</span></div>
+        <div class="profile-row"><span class="label">Diet</span><span class="value">Royal Canin + enriching treats</span></div>
+        <div class="profile-row"><span class="label">Known issues</span><span class="value caution">Itchier side</span></div>
+      </div>
+
+      <div class="priority-note">
+        <div class="priority-note-title">🔴 #1 Priority to Discuss with Your Vet</div>
+        <p>Chewy's chronic itchiness + Goldendoodle genetics + daily outdoor exposure is a classic presentation of <strong>atopic dermatitis</strong>. Tap <strong>Coat & Skin</strong> for a full breakdown and action plan.</p>
+      </div>
+    </div>
+
+    <div id="partView" style="display:none; flex-direction:column; height:100%">
+      <div class="panel-header">
+        <button class="close-btn" id="closeBtn">✕</button>
+        <h2 id="partTitle"></h2>
+        <p id="partSubtitle"></p>
+      </div>
+      <div class="panel-body" id="panelBody"></div>
+    </div>
+  </div>
+
+  <div id="debugLabel">left: 0% · top: 0%</div>
+
+<script>
+// ── Age ──────────────────────────────────────────────────────────────────
+const BIRTHDAY = new Date('2018-05-05');
+function calcAge() {
+  const now = new Date();
+  const totalDays = (now - BIRTHDAY) / 86400000;
+  const years = Math.floor(totalDays / 365.25);
+  const months = Math.floor((totalDays - years * 365.25) / 30.44);
+  const next = new Date(now.getFullYear(), 4, 5);
+  if (next < now) next.setFullYear(next.getFullYear() + 1);
+  const daysUntil = Math.ceil((next - now) / 86400000);
+  return { years, months, daysUntil, turnsNext: next.getFullYear() };
+}
+(function init() {
+  const a = calcAge();
+  const s = `${a.years} yrs ${a.months} mo`;
+  document.getElementById('topbarAge').textContent = s;
+  document.getElementById('profileAge').textContent = s;
+  document.getElementById('profileBirthday').textContent = `May 5 — turns ${a.turnsNext} in ${a.daysUntil}d 🎂`;
+})();
+
+// ── Data ─────────────────────────────────────────────────────────────────
+// All clinical claims are drawn from peer-reviewed publications or
+// published consensus guidelines from AVMA, ACVIM, AVDC, OFA, and ABVP.
+const DATA = {
+
+  brain: {
+    title: "Brain & Cognition",
+    subtitle: "Neurological & Cognitive Health",
+    chewyNote: {
+      level: "green",
+      text: "Chewy's daily off-leash exploration and varied environments provide exactly the kind of novel sensory input and decision-making that research associates with slower cognitive aging. His enriching treats — banana (antioxidants), Greek yogurt (probiotics), peanut butter — add dietary support. At almost 8, this is a good time to introduce structured scent-work or puzzle feeding to maintain neuroplasticity heading into his senior years."
+    },
+    science: {
+      icon: "🧠",
+      paragraphs: [
+        "The canine brain shares the same fundamental architecture as the human brain — cerebral cortex, limbic system, cerebellum, and brainstem — though the olfactory cortex is proportionally far larger, reflecting dogs' scent-driven cognition. Poodles and Golden Retrievers are ranked among the top working intelligence breeds in peer-reviewed assessments of obedience and problem-solving (Coren, 1994).",
+        "Canine Cognitive Dysfunction (CCD) is a well-characterized neurodegenerative syndrome. Neilson et al. (2001, JAVMA) found clinical CCD signs in 28% of dogs aged 11–12 years; Azkona et al. (2009, Veterinary Record) found cognitive impairment in 68% of dogs aged 15–16 years. Pathologically, CCD is characterized by beta-amyloid plaque deposition and neurofibrillary changes, confirmed across multiple post-mortem studies (Cummings et al. 1993, Neurobiology of Aging; Head et al. 2000, Journal of Neuropathology).",
+        "Controlled studies by Milgram et al. demonstrated that environmental enrichment and learning tasks measurably slowed cognitive decline in aged Beagles. A separate line of research found that antioxidant and DHA-enriched diets (Hill's b/d) improved cognitive test performance in aged dogs in randomized trials (Zicker et al. 2012, Veterinary Therapeutics). Aerobic exercise is additionally supported by general neuroscience literature on neuroplasticity and BDNF (brain-derived neurotrophic factor)."
+      ]
+    },
+    care: {
+      icon: "💊",
+      items: [
+        "Continue varied off-leash environments — novel terrain, scent diversity, and real-world problem-solving are well-supported cognitive stimulants based on Milgram et al.'s enrichment research",
+        "Add puzzle feeders or Kong-stuffed frozen meals — replaces passive eating with structured problem-solving, directly targeting neuroplasticity",
+        "Introduce nose-work or scent games: hide treats, teach 'find it,' or enroll in structured AKC-recognized nose-work classes",
+        "Teach at least one new behavior or skill per month — operant learning tasks are among the most-studied cognitive maintenance tools in dogs",
+        "Consider adding a DHA-enriched diet or fish oil supplement — supported by Zicker et al.'s randomized trial showing cognitive benefit in aged dogs",
+        "Annual wellness exams from age 7 onward should include a structured cognitive assessment — establishing a baseline makes future changes easier to detect"
+      ]
+    },
+    aging: {
+      icon: "⚠️",
+      warnings: [
+        { name: "Canine Cognitive Dysfunction (CCD, 9+ years)", desc: "Signs use the validated DISHA framework: Disorientation (circling, staring at walls, getting stuck), Interaction changes (reduced affection or new clinginess), Sleep-wake cycle reversal (restless at night, sleeping all day), House soiling without a medical cause, Activity level changes. Selegiline (Anipryl) is the only FDA-approved treatment; nutritional management and enrichment are adjuncts." },
+        { name: "Idiopathic Epilepsy (Any Age)", desc: "Golden Retrievers and Poodles both carry hereditary epilepsy risk, documented in breed-specific genetic studies. Onset typically occurs between 1–5 years. Signs: sudden loss of consciousness, tonic-clonic limb activity, post-ictal confusion, or transient blindness. Requires neurological evaluation and likely lifelong anti-seizure medication." },
+        { name: "Vestibular Disease (8+ years)", desc: "Acute-onset head tilt, circling, ataxia, and nystagmus — often indistinguishable from stroke at presentation. Peripheral vestibular disease (inner ear) typically resolves within 72 hours to 3 weeks without treatment. Always requires same-day veterinary evaluation to rule out central (intracranial) origin via neurological examination and imaging." },
+        { name: "Intracranial Neoplasia (7+ years)", desc: "Prevalence increases significantly after age 7. Signs include new-onset seizures, sudden personality or behavior changes, circling, head pressing, or progressive neurological deficits. MRI is required for diagnosis. Treatment options include surgery, radiation, and palliative care depending on tumor type and location." }
+      ]
+    }
+  },
+
+  eyes: {
+    title: "Eyes",
+    subtitle: "Vision & Ocular Health",
+    chewyNote: {
+      level: "green",
+      text: "No eye issues reported — excellent baseline. At almost 8, nuclear sclerosis (a normal, age-related bluish lens haze — not cataracts) may become visible over the next 1–2 years. This does not significantly impair vision and requires no treatment, but annual eye exams will differentiate it from true cataracts. His high-activity outdoor sessions increase airborne debris exposure around the eyes — use sterile saline rinse if irritation occurs after a field session."
+    },
+    science: {
+      icon: "🔬",
+      paragraphs: [
+        "Canine visual acuity is approximately 20/75 as measured by optomotor reflex testing and behavioral contrast-sensitivity studies (Miller & Murphy, 1995, JAVMA). Dogs are dichromats, perceiving the blue-yellow spectrum but not red-green, due to having two cone photoreceptor types versus the human three. Motion detection is significantly superior to humans — an advantage relevant to ball-tracking during Chewy's off-leash sessions.",
+        "The tapetum lucidum, a reflective choroidal layer found in many species, amplifies retinal photon capture in low-light conditions and accounts for the eye-shine visible in photographs. It contributes to dogs' significantly better night vision compared to humans, though it also reduces spatial acuity under bright light.",
+        "Progressive Retinal Atrophy (PRA) is a group of hereditary retinal degenerations documented in both Golden Retrievers (prcd-PRA) and Poodles (multiple variants). The progressive rod-cone degeneration (prcd) form is autosomal recessive and can be identified via DNA test from OptiGen or Embark before any clinical signs appear. Cataracts also have a documented hereditary component in both parent breeds (Genetics Committee, ACVO)."
+      ]
+    },
+    care: {
+      icon: "💊",
+      items: [
+        "Annual comprehensive ophthalmic examination — ACVO (American College of Veterinary Ophthalmologists) recommends annual exams for breeds with hereditary ocular disease risk",
+        "Request a full fundic (retinal) exam with indirect ophthalmoscopy — standard auscultation alone will not detect early PRA",
+        "Gently wipe periocular discharge with a soft damp cloth daily — prevents tear staining and secondary skin fold dermatitis in dogs with dense facial fur",
+        "Keep facial fur trimmed around the eyes at every grooming — chronic fur contact causes corneal irritation and epiphora (tearing)",
+        "Consider a one-time DNA panel (Embark or Wisdom Panel) for PRA and hereditary cataract variants if not already done",
+        "Use only vet-approved sterile saline or ophthalmic rinse — human eye drops contain preservatives and pH adjustments incompatible with canine tear composition"
+      ]
+    },
+    aging: {
+      icon: "⚠️",
+      warnings: [
+        { name: "Nuclear Sclerosis (Typically 7–9+ years)", desc: "Age-related increased density of the lens nucleus causes a bluish-gray haze visible through the pupil. This is a normal physiological change — unlike cataracts, the retina remains visible through the haze via ophthalmoscope and vision is minimally affected. No treatment is needed; annual monitoring differentiates it from pathological changes." },
+        { name: "Hereditary Cataracts", desc: "Opaque lens protein aggregation causing progressive vision impairment. Goldendoodles inherit cataract risk from both parent breeds (documented in ACVO/OFA eye certification records). Signs: white or opaque pupillary reflection (distinct from the blue haze of nuclear sclerosis), bumping into objects, reluctance in unfamiliar environments. Surgical extraction is effective." },
+        { name: "Progressive Retinal Atrophy (PRA)", desc: "Bilateral, symmetric retinal degeneration. Night blindness is the first clinical sign — watch for hesitation going outside at dusk, reluctance on poorly lit stairs, dilated pupils in normal lighting. Progresses to full blindness over months to years. DNA testing identifies carriers before any clinical signs. No treatment exists; DNA-informed breeding selection is preventive." },
+        { name: "Glaucoma", desc: "Elevated intraocular pressure causes acute optic nerve and retinal damage. Can cause permanent blindness within hours of onset. Signs: sudden cloudiness, conjunctival redness, blepharospasm (squinting), epiphora, and behavioral pain cues. Requires same-day emergency evaluation. Breed predispositions are documented but any dog can be affected." },
+        { name: "Entropion", desc: "Inward rolling of the eyelid margin causing chronic trichiasis (lash-cornea contact), corneal ulceration, and pain. Signs include epiphora, blepharospasm, and mucopurulent ocular discharge. Requires surgical correction (Hotz-Celsus procedure); may recur with age-related periocular tissue laxity." }
+      ]
+    }
+  },
+
+  ears: {
+    title: "Ears",
+    subtitle: "Hearing & Ear Canal Health",
+    chewyNote: {
+      level: "yellow",
+      text: "⚠️ Chewy's itchiness is an important warning flag here. In dogs with atopic dermatitis, the ears are a primary manifestation site — recurrent ear infections (allergic otitis) are the most common concurrent finding. His daily off-leash sessions through grass and varied terrain increase debris and allergen load in the ear canal. Dry and check his ears after every long outdoor session. Ask your vet: 'Should we do an ear cytology swab to check if his itchiness is involving his ears?'"
+    },
+    science: {
+      icon: "🔬",
+      paragraphs: [
+        "The canine auditory range spans approximately 40 Hz to 65,000 Hz, compared to the human range of approximately 20–20,000 Hz (Strain, 2004, Veterinary Clinics of North America). Dogs possess approximately 18 auricular muscles — compared to the human 3 — enabling independent pinna rotation of up to 180 degrees for precise sound localization.",
+        "The canine external ear canal is L-shaped, descending vertically from the pinna before turning horizontally toward the tympanic membrane. This architecture — combined with the reduced convective airflow beneath a pendulous pinna — creates the warm, humid, low-oxygen microenvironment that predisposes dogs like Chewy to otitis externa (Hayes et al., 1987; Cole, 2004).",
+        "Poodle genetics commonly produce pronounced hair follicle density within the vertical ear canal. Combined with floppy-ear anatomy, this creates impaired drainage and aeration. Multiple studies confirm Poodles and their crosses have significantly higher otitis externa prevalence than erect-eared breeds (Zur et al., 2011; Griffin, 2006, Veterinary Clinics of North America)."
+      ]
+    },
+    care: {
+      icon: "💊",
+      items: [
+        "Clean ears every 1–2 weeks using a vet-approved ceruminolytic ear cleaner (e.g., Zymox, Epi-Otic) — fill canal, massage base 30 seconds, allow Chewy to shake",
+        "After every outdoor session involving water, snow, or tall grass: dry the outer canal with a cotton ball to remove moisture",
+        "Ask your groomer to pluck or closely trim ear canal hair at every appointment — improves airflow and reduces otitis risk",
+        "Weekly inspection: healthy ears are pale pink, odorless, with minimal light tan waxy debris — any deviation warrants a vet check",
+        "Insert cotton balls at the canal opening during baths before wetting the head — removes a significant source of moisture introduction",
+        "Never insert cotton-tipped swabs into the vertical canal — studies confirm this packs debris toward the tympanic membrane and can cause iatrogenic otitis"
+      ]
+    },
+    aging: {
+      icon: "⚠️",
+      warnings: [
+        { name: "Allergic Otitis (Elevated risk for Chewy now)", desc: "The most common ear finding in atopic dogs. Otitis externa is documented in 50–80% of atopic dogs across multiple published studies (Griffin 2001; Prelaud 2009). Given Chewy's itchiness, this is his primary ear risk. Signs: head shaking, pruritus at pinnae, dark brown/black or yellow discharge, odor, erythema, head tilt. Cytology is required to distinguish bacterial vs. yeast etiology before treatment." },
+        { name: "Age-Related Hearing Loss (Presbycusis, 8+ years)", desc: "Sensorineural cochlear degeneration is a well-documented age-related change in dogs. Strain (2010) and others describe progressive high-frequency hearing loss preceding broader range loss. Early behavioral signs: reduced responsiveness to voice at a distance, startle response when approached from behind, failure to wake to familiar sounds. BAER (brainstem auditory evoked response) testing provides objective audiometric assessment." },
+        { name: "Aural Hematoma", desc: "Auricular hematoma forms when vigorous, repetitive head shaking (typically from otitis) causes hemorrhage between the auricular cartilage and skin. Presents as sudden, painful, fluid-filled pinna swelling. Requires surgical or drainage treatment; the underlying otitis must be resolved to prevent recurrence." },
+        { name: "Vestibular Syndrome (Peripheral, 8+ years)", desc: "Idiopathic geriatric vestibular disease — sudden-onset head tilt, rolling, nystagmus, and severe ataxia — is more common in older dogs and resolves spontaneously in most cases within 2–3 weeks. Clinical signs are indistinguishable from central vestibular lesions on initial presentation; neurological examination and often MRI are required to differentiate." }
+      ]
+    }
+  },
+
+  nose: {
+    title: "Nose",
+    subtitle: "Olfaction & Nasal Health",
+    chewyNote: {
+      level: "green",
+      text: "Chewy is clearly a dedicated snow explorer — the evidence is right on his beard in this photo! After cold hikes, apply a dog-safe nose balm to protect against drying. His off-leash sniff sessions are among the most valuable things you provide him: sniffing activates the olfactory-limbic reward circuit and published behavioral research confirms it measurably lowers cortisol and produces calming physiological responses. Keep prioritizing those long sniff walks — they matter."
+    },
+    science: {
+      icon: "🔬",
+      paragraphs: [
+        "The canine olfactory epithelium contains an estimated 150–300 million olfactory receptor neurons depending on breed — compared to approximately 6 million in humans. The brain region dedicated to olfactory processing is proportionally 40 times larger than in humans (Craven et al., 2010, Anatomical Record). This enables dogs to detect odors at concentrations many orders of magnitude below human detection thresholds, which varies by odorant and study design.",
+        "Airflow during inhalation bifurcates at the nasopharynx: the primary pathway delivers air to the lungs, while a secondary flow is directed into the olfactory recess — a dedicated chamber lined with sensory epithelium. Each nostril can operate partially independently, allowing directional scent localization (Wilson & Bremner, 2011). The moist rhinarium (nasal planum) facilitates scent particle trapping via surface liquid.",
+        "Behavioral research by Berns, Cook, and Duranton et al. confirms that olfactory engagement — including off-leash 'sniffari' sessions — produces measurable reductions in physiological stress indicators in dogs. The rhinarium cycles between slightly wet and dry states throughout the day as a normal physiological process; this does not indicate illness."
+      ]
+    },
+    care: {
+      icon: "💊",
+      items: [
+        "Apply a dog-safe nose balm (e.g., Snout Soother by Natural Dog Company) after cold-weather or windy outdoor sessions — the rhinarium is susceptible to keratinization and cracking from repeated cold-dry air exposure",
+        "Rinse the perinasal area after walks on surfaces treated with road salt or chemical ice-melt products — calcium chloride and magnesium chloride are mucous membrane irritants",
+        "Dogs with hypopigmented (pink) nasal planum can experience UV-related actinic damage on snow — reflective surfaces intensify UV exposure; pet-formulated SPF is available",
+        "Avoid aerosol sprays, diffused essential oils, and harsh cleaning products near ground level — the olfactory epithelium is acutely sensitive to these compounds",
+        "Never apply human moisturizers to the rhinarium — multiple human formulations contain xylitol, propylene glycol, zinc oxide, or fragrances that are toxic to dogs via ingestion",
+        "A periodically dry or warm nose in an otherwise clinically normal dog is not indicative of illness; fever assessment requires rectal thermometry"
+      ]
+    },
+    aging: {
+      icon: "⚠️",
+      warnings: [
+        { name: "Nasal Hyperkeratosis (5+ years)", desc: "Idiopathic nasal hyperkeratosis — excess keratin deposition causing a hard, crusty, or fissured rhinarium surface — is a recognized age-related condition in middle-aged to older dogs. It is generally benign but clinically relevant conditions such as pemphigus foliaceous, distemper sequelae, and zinc-responsive dermatosis must be excluded by a dermatologist before attributing it to idiopathic aging." },
+        { name: "Nasal Planum Depigmentation", desc: "Loss of nasal pigment (vitiligo-like or 'snow nose') is common in Golden Retrievers and their crosses, particularly seasonally. Symmetric, stable depigmentation is typically cosmetic. Asymmetric, progressive, or ulcerative depigmentation — especially with concurrent crusting — may indicate pemphigus, discoid lupus erythematosus, or uveodermatological syndrome, all of which require dermatologic evaluation." },
+        { name: "Sinonasal Neoplasia", desc: "Primary nasal and paranasal sinus tumors are more prevalent in dolichocephalic and mesocephalic dogs. Signs include unilateral (initially) epistaxis, mucopurulent discharge, facial asymmetry, exophthalmos, and stridor. Early imaging (CT scan) and biopsy are required. Radiation therapy is the primary treatment modality." },
+        { name: "Nasal Aspergillosis", desc: "Fungal infection by Aspergillus fumigatus causes progressive turbinate destruction. Clinical signs include chronic unilateral or bilateral mucopurulent or bloody nasal discharge, depigmentation of the rhinarium, pain on nasal palpation, and sneezing. Diagnosis requires rhinoscopy, cytology, and culture. Topical antifungal infusion (clotrimazole) is first-line treatment with good reported outcomes." }
+      ]
+    }
+  },
+
+  mouth: {
+    title: "Teeth & Mouth",
+    subtitle: "Dental & Oral Health",
+    chewyNote: {
+      level: "yellow",
+      text: "A few treat-specific notes backed by dental evidence: peanut butter has high adhesiveness to tooth surfaces — brush within an hour of giving it. Banana's natural sugars (fructose) can contribute to plaque substrate, though the risk is lower than with refined sugars. Plain, unsweetened Greek yogurt is actually beneficial — its lactic acid bacteria have been studied for positive effects on oral microbiome composition. Royal Canin makes a dental-specific formula that uses kibble texture to mechanically reduce tartar (VOHC-recognized). At almost 8, ask your vet when his last professional cleaning was — he's likely due."
+    },
+    science: {
+      icon: "🔬",
+      paragraphs: [
+        "Adult dogs have 42 permanent teeth. The American Veterinary Dental College (AVDC) and multiple epidemiological studies report that over 80% of dogs over age 3 have clinically detectable periodontal disease. The pathological sequence — subgingival plaque biofilm → calculus formation → gingivitis → periodontal ligament destruction → alveolar bone loss — is largely identical to human periodontal disease and is well-characterized in veterinary dental literature (Niemiec, 2008; Harvey & Emily, 1993).",
+        "Caries (cavity) formation is significantly less common in dogs than in humans due to lower dietary simple carbohydrate exposure and a more alkaline salivary pH (approximately 7.5 vs. human 6.7–7.0). The primary pathological process is instead supragingival and subgingival calculus accumulation and the resultant periodontal inflammation.",
+        "The association between periodontal disease and systemic cardiovascular change has been documented in a veterinary study by Pavlica et al. (2008, JVIM), which found histopathological myocardial changes correlated with periodontal disease severity in dogs. Bacterial endocarditis caused by oral bacteria is a documented complication in dogs with severe periodontal disease. While direct causality between periodontal disease and cardiac disease requires further study, the biological plausibility is well-established and professional dental care is broadly recommended as part of comprehensive health maintenance."
+      ]
+    },
+    care: {
+      icon: "💊",
+      items: [
+        "Daily tooth brushing with enzymatic dog-specific toothpaste (e.g., C.E.T. enzymatic) — xylitol in human toothpaste causes life-threatening hypoglycemia in dogs; fluoride at human concentrations is also a concern",
+        "Target the buccal (outer) surfaces of the upper premolars and molars where calculus accumulates fastest — the tongue mechanically cleans lingual surfaces",
+        "Provide VOHC-seal dental chews daily — the Veterinary Oral Health Council seal indicates the product has demonstrated plaque or calculus reduction in controlled clinical trials (e.g., Greenies, Virbac C.E.T. chews, Purina DentaLife)",
+        "Professional scaling and polishing under general anesthesia every 1–2 years — subgingival plaque and calculus, which drive periodontal disease, cannot be addressed without anesthesia-supported instrumentation",
+        "Monthly oral examination: lift the lip bilaterally and inspect the gingival margin for redness, recession, bleeding, calculus, and any soft tissue masses",
+        "Avoid recreational items harder than the tooth itself: antlers, raw bones, hard nylon toys, and ice cubes are known to cause slab fracture of the carnassial tooth (the 'fingernail test' is the AVDC's recommended hardness screen)"
+      ]
+    },
+    aging: {
+      icon: "⚠️",
+      warnings: [
+        { name: "Periodontal Disease (Progression with age)", desc: "The rate of bone loss and attachment loss accelerates with age and inadequate preventive care. Stages I–IV of periodontal disease are classified by the AVDC based on the percentage of attachment loss. Stages III–IV involve irreversible alveolar bone destruction. Signs: persistent halitosis, gingival recession, tooth mobility, reluctance to chew hard food, food dropping, facial swelling." },
+        { name: "Tooth Root Abscess", desc: "The upper carnassial tooth (4th premolar) is most commonly affected due to its large root structure. A periapical abscess may present externally as a draining tract on the lateral face below the eye. Very painful, often subclinical until late. Requires extraction or root canal treatment with full-mouth dental radiography." },
+        { name: "Oral Neoplasia", desc: "The oral cavity is one of the more common sites for neoplasia in dogs. Melanoma, squamous cell carcinoma, and fibrosarcoma are the three most common types. Any new pigmented lesion, raised mass, or area of tissue color change inside the mouth warrants prompt fine-needle aspirate or incisional biopsy. Oral melanoma now has a conditionally approved immunotherapy (Oncept vaccine, Merial)." },
+        { name: "Tooth Resorption", desc: "Progressive internal or external erosion of tooth structure — frequently an incidental finding on dental radiographs. Affected teeth are painful and require extraction. Clinical signs when advanced include ptyalism, preferential chewing on one side, and reluctance to be examined around the mouth." },
+        { name: "Cardiac Sequelae", desc: "Pavlica et al. (2008, JVIM) documented a significant correlation between periodontal disease severity and myocardial changes in dogs. While causation is not yet definitively established, the clinical implication — supported by professional organizations including the AVDC — is that consistent periodontal management is part of cardiovascular preventive care." }
+      ]
+    }
+  },
+
+  heart: {
+    title: "Heart & Longevity",
+    subtitle: "Cardiovascular Health & Lifespan Science",
+    chewyNote: {
+      level: "yellow",
+      text: "No cardiac issues reported — Chewy's exercise routine is excellent cardiovascular conditioning. This section covers two equally important topics: (1) monitoring and protecting his heart as he ages, and (2) the most scientifically credible life-extension interventions currently available or in active FDA-reviewed trials. At almost 8, this is the right time to start thinking about both proactively."
+    },
+    science: {
+      icon: "❤️",
+      paragraphs: [
+        "The dog's heart is a four-chambered organ weighing approximately 0.7–1.0% of body weight, with larger relative cardiac mass in dogs with high aerobic conditioning — consistent with Chewy's exercise level. Heart rate at rest in dogs ranges from 60–140 bpm; well-conditioned athletic dogs trend toward the lower end. The cardiac cycle is regulated by the sinoatrial (SA) node and is subject to the same aging processes — including valvular degeneration and myocardial stiffening — as in humans.",
+        "Golden Retrievers have a documented breed predisposition to Subvalvular Aortic Stenosis (SAS), a congenital narrowing of the left ventricular outflow tract. The FDA also conducted a multi-year investigation (2018–2022) into a potential link between grain-free, legume-heavy diets and dilated cardiomyopathy (DCM) in dogs. Causality was not definitively established; the FDA concluded in 2022 they would not issue further updates. However, the American College of Veterinary Internal Medicine (ACVIM) Cardiac Health Committee continues to recommend grain-inclusive diets, particularly for breeds with documented DCM predisposition. Royal Canin's standard formulas are grain-inclusive and appropriate from this standpoint.",
+        "Chewy's sustained aerobic exercise — particularly his 45–90 minute off-leash sessions — provides measurable cardiovascular conditioning: improved cardiac output, favorable left ventricular remodeling, and reduced resting heart rate. These effects are documented in exercise physiology studies in dogs (Maron et al.; Spier et al.) and are directly analogous to the well-characterized cardiac benefits of regular aerobic exercise in humans."
+      ]
+    },
+    care: {
+      icon: "💊",
+      items: [
+        "Annual cardiac auscultation by a veterinarian from age 7 onward — a murmur is frequently the first detectable sign of early valvular or myocardial disease, often preceding clinical signs by years",
+        "Continue Chewy's current exercise routine — sustained aerobic activity is the best-evidenced non-pharmacological cardiac health intervention",
+        "Maintain 23 lb target weight — the Purina LifeSpan Study (Kealy et al. 2002, JAVMA) found lean body condition significantly delayed age-related cardiovascular and orthopedic changes; this is the most rigorously proven single modifiable health factor in dogs",
+        "Omega-3 (EPA+DHA) supplementation — Freeman et al. (JVIM, 1998, 2011) demonstrated measurable cardiac benefits in dogs; ACVIM cardiac guidelines include omega-3 supplementation as part of standard cardiac management; discuss dose with your vet",
+        "Maintain periodontal health — Pavlica et al. (2008, JVIM) documented correlation between periodontal disease severity and myocardial histopathological changes in dogs",
+        "Royal Canin (grain-inclusive) is appropriate — consistent with ACVIM's recommendation to avoid grain-free, high-legume formulations given the ongoing DCM investigation signal"
+      ]
+    },
+    longevity: {
+      icon: "🧬",
+      items: [
+        {
+          badge: "proven",
+          badgeText: "Most Proven — Do This Now",
+          name: "Lean Body Weight Maintenance",
+          desc: "The Purina LifeSpan Study (Kealy et al. 2002, JAVMA) — a 14-year randomized controlled trial in 48 Labrador Retrievers — found that lean-fed dogs (25% caloric restriction from 8 weeks) lived a median of 1.8 years longer than ad libitum-fed controls (13.0 vs. 11.2 years). Lean dogs also showed delayed onset of hip osteoarthritis and chronic disease. This remains the single intervention with the highest level of evidence for extending lifespan in dogs. Chewy at his target weight is already benefiting from this."
+        },
+        {
+          badge: "available",
+          badgeText: "Available Now (Vet Rx Required)",
+          name: "Rapamycin — mTOR Inhibitor",
+          desc: "Rapamycin (sirolimus) is an FDA-approved immunosuppressant in humans (Rapamune, Pfizer) that inhibits mTOR — a central cellular signaling pathway regulating aging, autophagy, and metabolic function. Urfer et al. (2017, GeroScience) published the first randomized controlled trial of low-dose rapamycin in 24 middle-aged companion dogs. The 10-week treatment significantly improved left ventricular diastolic function (a cardiac aging marker) with no detected adverse effects. It is currently prescribable off-label in dogs by veterinary internists as a compounded formulation. The TRIAD study (see below) is establishing optimal dosing. Discuss with a veterinary internist before pursuing — immunosuppression at incorrect doses is a real risk."
+        },
+        {
+          badge: "enroll",
+          badgeText: "Free Enrollment Available",
+          name: "Dog Aging Project (dogagingproject.org)",
+          desc: "The Dog Aging Project, led by researchers at the University of Washington and funded by the NIH, is the largest longitudinal study of aging in companion dogs ever conducted — tracking over 10,000 dogs. Free enrollment at dogagingproject.org provides annual health data analysis and contributes to aging research. Enrolled dogs may qualify for the TRIAD sub-study (Test of Rapamycin in Aging Dogs) — a placebo-controlled, blinded trial of intermittent low-dose rapamycin. Chewy's size and age profile makes him a candidate for enrollment eligibility review."
+        },
+        {
+          badge: "trial",
+          badgeText: "Phase 2/3 Clinical Trial — Register Now",
+          name: "Loyal LOY-003 (Oral Rapamycin, All Breeds)",
+          desc: "Loyal is a San Francisco-based biopharmaceutical company developing the first FDA-regulated drug specifically for canine lifespan extension. LOY-003 is an oral rapamycin formulation designed for all breeds and sizes, currently in Phase 2/3 clinical trials. A related compound, LOY-001 (targeting the IGF-1/GH axis in large breeds), became the first drug ever to receive FDA acknowledgment of 'reasonably anticipated effectiveness' data for an aging indication in any species (2023) — a regulatory milestone. LOY-003 is not yet commercially available; FDA approval is anticipated in the 2026–2027 timeframe if trials succeed. Register for trial participation and approval updates at loyal.com."
+        },
+        {
+          badge: "available",
+          badgeText: "Available OTC — Start Now",
+          name: "Omega-3 Fatty Acids (EPA + DHA)",
+          desc: "Multiple peer-reviewed studies have documented cardiac benefit of marine omega-3 supplementation in dogs (Freeman et al. JVIM 1998, 2011; Smith et al. JVIM 2007 in Boxers with arrhythmogenic cardiomyopathy). Omega-3s reduce inflammatory eicosanoid production, decrease arrhythmia susceptibility, and support cardiac muscle membrane function. The ACVIM includes EPA+DHA supplementation in its cardiac management guidelines. For healthy dogs, supplementation is considered safe and potentially preventive. Discuss dose with your vet — published veterinary cardiology guidelines provide weight-based recommendations."
+        }
+      ]
+    },
+    aging: {
+      icon: "⚠️",
+      warnings: [
+        { name: "Myxomatous Mitral Valve Disease (MMVD, 8+ years)", desc: "MMVD is the most common acquired cardiac disease in dogs, with prevalence increasing sharply after age 8. Valve leaflet thickening causes progressive regurgitation and eventually congestive heart failure. The EPIC Trial (Boswood et al. 2016, JVIM) — a landmark multi-center randomized controlled trial — demonstrated that pimobendan significantly delays onset of clinical heart failure in dogs with preclinical MMVD and cardiac enlargement. Annual auscultation allows detection of the characteristic murmur before clinical decompensation." },
+        { name: "Dilated Cardiomyopathy (DCM)", desc: "DCM causes reduced myocardial contractility and progressive cardiac dilation. Though less common in mixed and small breeds, it should be in awareness for any dog on a grain-free or high-legume diet (given the FDA's investigation). Taurine deficiency has been documented in DCM cases associated with certain diets. Annual auscultation and, if a murmur is detected, echocardiography provide definitive assessment." },
+        { name: "Subvalvular Aortic Stenosis (SAS)", desc: "A congenital narrowing below the aortic valve documented as a breed-specific condition in Golden Retrievers and their crosses (OFA breed statistics; Kienle et al.). Mild cases may be detected as an incidental murmur in otherwise asymptomatic dogs. More severe cases cause exercise intolerance, syncope, and sudden cardiac death. Echocardiography is diagnostic; Doppler assessment of outflow velocity quantifies severity." },
+        { name: "Arrhythmias", desc: "Both atrial and ventricular arrhythmias occur more frequently with age and in the setting of any structural heart disease. Clinically significant arrhythmias may cause exercise intolerance, episodic weakness, or syncope. Holter monitoring (24-hour ambulatory ECG) provides the most sensitive detection of intermittent arrhythmias that are missed on in-clinic auscultation." },
+        { name: "Exercise Intolerance as Early Cardiac Sign", desc: "Reduced exercise tolerance is often the first owner-reported sign of cardiac disease — tiring earlier than expected, slowing more noticeably after exertion, or prolonged recovery. Given Chewy's established high baseline, even subtle changes from his normal performance are meaningful and warrant evaluation. Respiratory rate at rest >30 breaths/min is a specific early sign of pulmonary edema in heart failure." }
+      ]
+    }
+  },
+
+  coat: {
+    title: "Coat & Skin",
+    subtitle: "Dermatological & Integumentary Health",
+    chewyNote: {
+      level: "red",
+      text: "🔴 Priority area. Chewy's chronic itchiness + Goldendoodle genetics + daily environmental allergen exposure is clinically consistent with atopic dermatitis (atopy) — the most common chronic inflammatory skin condition in dogs and well-documented in both parent breeds. ACTION PLAN: (1) After every outdoor session, wipe belly, inner thighs, and paws with a damp cloth — this removes deposited allergens before licking occurs. (2) Ask your vet about Cytopoint (lokivetmab — a monthly monoclonal antibody injection with strong safety and efficacy data from controlled trials) or Apoquel (oclacitinib — daily oral JAK inhibitor). (3) Start daily fish oil (EPA+DHA). (4) Ask whether a Royal Canin Skin & Coat or Hydrolyzed Protein formula is appropriate."
+    },
+    science: {
+      icon: "🔬",
+      paragraphs: [
+        "Canine skin is structurally thinner than human skin — the canine epidermis is approximately 3–5 cell layers compared to 10–15 in humans — and maintains a more alkaline surface pH (6.2–7.4 vs. human 4.5–5.5). This pH difference and thinner barrier make the canine skin more susceptible to allergen penetration and transepidermal water loss, particularly relevant in atopic individuals (Yager & Wilcock, 1994).",
+        "Atopic dermatitis (atopy) is the most common allergic skin disease in dogs, with a well-documented genetic predisposition in Poodles and Golden Retrievers individually (Zur et al. 2002, Veterinary Dermatology; Hillier & Griffin 2001, Veterinary Immunology and Immunopathology). The pathophysiology involves a defective epidermal barrier allowing environmental allergen penetration — grass pollen, house dust mites, and mold spores are among the most commonly identified triggers in canine allergen-specific IgE testing. Secondary ear infections (allergic otitis) are present in approximately 50–80% of atopic dogs.",
+        "Epidemiological data from multiple published breed-specific mortality surveys, including Bronson (1982) and subsequent studies summarized by the Morris Animal Foundation's Golden Retriever Lifetime Study (the largest dog health study ever conducted), indicate that approximately 60% of Golden Retrievers die from neoplastic disease — a rate substantially higher than the dog population overall. This elevated neoplastic risk is partially shared by Goldendoodles through their Golden Retriever heritage, making regular physical examination for new masses a clinical priority."
+      ]
+    },
+    care: {
+      icon: "💊",
+      items: [
+        "After every outdoor session: wipe belly, inner thighs, and paws with a damp cloth to remove surface allergens before Chewy ingests them via grooming — this is supported as a practical allergen-reduction strategy in atopy management guidelines",
+        "Professional grooming every 6–8 weeks — matted Goldendoodle coat traps allergens, moisture, and warmth against the skin, worsening the atopic microenvironment",
+        "Brush 3–4 times weekly; focus on axillae, inguinal region, and behind pinnae — high-friction, high-moisture zones prone to secondary yeast and bacterial infection in atopic dogs",
+        "Bathing every 2–4 weeks with a veterinary hypoallergenic or oatmeal-based shampoo — published studies support frequent bathing as an allergen-reduction strategy in atopic dogs (Löflath et al. 2007, Veterinary Dermatology)",
+        "Full-body palpation at every grooming session — systematic digital palpation of the entire integument, including the ventral abdomen, axillae, and inguinal region, for new masses",
+        "Daily omega-3 supplementation (EPA+DHA fish oil) — published randomized trials have demonstrated significant reduction in CADESI (Canine Atopic Dermatitis Extent and Severity Index) scores in atopic dogs receiving omega-3 supplementation (Saevik et al. 2004, Veterinary Dermatology)"
+      ]
+    },
+    aging: {
+      icon: "⚠️",
+      warnings: [
+        { name: "Atopic Dermatitis (Chewy's active concern)", desc: "Environmental allergens — grass pollen is among the most commonly identified triggers in canine IgE testing — are the primary culprits for outdoor dogs. FDA-approved management options with strong clinical trial data: Cytopoint (lokivetmab, Zoetis) — a canine-specific IL-31 monoclonal antibody, monthly injection, excellent safety profile; Apoquel (oclacitinib, Zoetis) — JAK1/JAK3 inhibitor, rapid itch control, daily oral tablet. Allergen-specific immunotherapy (ASIT) builds long-term tolerance and has the most evidence for disease modification." },
+        { name: "Lipomas (Elevated from middle age)", desc: "Benign lipocytic tumors become progressively more common from middle age onward, particularly in Golden Retriever lineages. They are typically soft, well-demarcated, freely moveable, and slow-growing. Every new subcutaneous mass should be confirmed via fine-needle aspirate cytology — clinical appearance alone cannot reliably distinguish a lipoma from an infiltrative lipoma or liposarcoma." },
+        { name: "Mast Cell Tumors", desc: "Golden Retrievers have among the highest mast cell tumor (MCT) incidence of any breed in multiple published surveys. MCTs can be morphologically indistinguishable from benign dermal masses. Any new mass — particularly one that fluctuates in size, is associated with surrounding erythema, or ulcerates — requires immediate fine-needle aspirate or punch biopsy. Grade and Ki67 index guide prognosis and treatment selection." },
+        { name: "Hemangiosarcoma", desc: "Vascular-endothelial neoplasia with disproportionately high prevalence in Golden Retrievers documented across multiple epidemiological studies. Subcutaneous hemangiosarcoma presents as a soft, dark, blood-filled mass and has a better prognosis than the splenic or cardiac forms. Internal (splenic) hemangiosarcoma often presents as sudden collapse from hemoabdomen with no preceding signs. Routine abdominal ultrasound from age 8 onward is recommended for Golden Retriever-heritage dogs by some internists." },
+        { name: "Hypothyroidism", desc: "Autoimmune lymphocytic thyroiditis and idiopathic follicular atrophy are the two primary causes of hypothyroidism in dogs, with Golden Retrievers having documented breed predisposition (Graham et al., Veterinary Clinics of North America). Clinical signs: weight gain without dietary change, bilateral symmetric truncal alopecia, myxedema, bradycardia, lethargy, and cold intolerance. Diagnosis via total T4 ± free T4 ± TSH measurement. Managed with once-daily levothyroxine." }
+      ]
+    }
+  },
+
+  joints: {
+    title: "Joints & Hips",
+    subtitle: "Musculoskeletal & Orthopedic Health",
+    chewyNote: {
+      level: "yellow",
+      text: "⚠️ Chewy's 23 lb target weight is his single biggest joint protection factor — the Purina LifeSpan Study (Kealy et al. 2002, JAVMA) found that lean body condition significantly delayed onset of hip osteoarthritis. However, his daily ball-throwing sessions merit attention as he approaches 8. High-speed chases, explosive deceleration, and lateral pivoting place cumulative stress on hips, stifles (knees), and elbow joints — all susceptible to degenerative change at this age. Consider capping intense fetch at 15–20 throws per session and playing on grass rather than hard surfaces. His 30-minute leash walk is ideal and should be continued."
+    },
+    science: {
+      icon: "🔬",
+      paragraphs: [
+        "Synovial joints rely on articular cartilage for frictionless load transmission. Cartilage is avascular and largely aneural — meaning it has no direct blood supply and no pain sensation, which is why early cartilage damage is typically clinically silent. Repair capacity is extremely limited; once articular cartilage is lost to degenerative joint disease, the process is not reversible with currently available treatments (Johnston, 1997, Veterinary Clinics of North America).",
+        "Hip dysplasia — abnormal development of the coxofemoral (hip) joint — is documented in approximately 20% of Golden Retrievers screened by the Orthopedic Foundation for Animals (OFA breed statistics, 2023). Standard Poodles have significantly lower OFA-reported prevalence, which moderates inherited risk in Goldendoodle crosses. The landmark Purina LifeSpan Study (Kealy et al. 2002) demonstrated that lean body condition significantly delayed onset and reduced severity of hip osteoarthritis in Labrador Retrievers — the most important finding in canine orthopedic preventive medicine.",
+        "Cranial Cruciate Ligament (CCL) rupture is the most common orthopedic injury in dogs and is disproportionately prevalent in Golden Retriever-heritage dogs (Whitehair et al. 1993; Griffon 2010, Veterinary Clinics of North America). Unlike most human ACL tears, canine CCL rupture is typically the result of progressive collagen degeneration — the ligament weakens through repeated microtrauma, particularly from high-impact deceleration and pivoting, until it ruptures — often during a seemingly unremarkable movement."
+      ]
+    },
+    care: {
+      icon: "💊",
+      items: [
+        "Maintain 23 lb target weight — the Kealy et al. 2002 data is unambiguous: lean body condition is the most proven single modifiable factor for delaying joint disease onset and progression",
+        "Glucosamine and chondroitin sulfate supplementation is commonly recommended and generally considered safe — Moreau et al. (2003, JAVMA) found modest short-term benefit in dogs with osteoarthritis; discuss dosing with your vet as optimal dog-specific doses are still being established",
+        "Limit ball throwing to 15–20 repetitions per session — replace additional activity with sniff walks, which provide mental enrichment and cardiovascular benefit without high-impact loading",
+        "Prefer soft natural surfaces (grass, packed dirt trails) over pavement, concrete, or gravel for high-intensity sessions",
+        "Use ramps for vehicle entry/exit — repetitive jumping from elevated surfaces is a documented cause of cumulative stifle and hip stress",
+        "Provide orthopedic-grade memory foam bedding — reduces joint loading during prolonged rest and is associated with reduced morning stiffness in arthritic dogs",
+        "Swimming is the most evidence-supported low-impact alternative exercise — builds muscle mass without any joint impact loading"
+      ]
+    },
+    aging: {
+      icon: "⚠️",
+      warnings: [
+        { name: "Osteoarthritis (Chewy's approaching risk window)", desc: "Progressive degradation of articular cartilage with secondary bony changes. Hips, elbows, and stifles are most commonly affected in active dogs with Golden Retriever heritage. Early signs are often subtle and behavioral: slightly slower pace on walks, brief post-rest stiffness that resolves with movement, mild reluctance to jump into a car. Catching this early enables earlier, more effective management." },
+        { name: "Hip Dysplasia", desc: "Even without prior diagnosis, subtle dysplasia may manifest as stiffness or gait change with age. Signs: bunny-hopping gait (simultaneous hind limb advancement), reluctance to run or climb stairs, difficulty rising from rest, waddling hindquarters. Definitive diagnosis requires orthogonal hip radiography under sedation. OFA and PennHIP are the two validated grading systems." },
+        { name: "CCL (Cranial Cruciate Ligament) Rupture", desc: "Acute complete rupture: sudden non-weight-bearing hind limb lameness with a positive cranial drawer or tibial thrust test. Partial tears can present as intermittent or chronic weight-bearing lameness. TPLO (tibial plateau leveling osteotomy) and other extra-capsular techniques are among the most published surgical repairs with documented long-term outcomes; without surgery, progressive stifle arthritis is predictable (Conzemius et al. 2005, JAVMA)." },
+        { name: "Spondylosis Deformans", desc: "Ventral bridging osteophytes form between vertebral bodies as a response to intervertebral disc degeneration — a common incidental radiographic finding in dogs over 8. Many affected dogs are asymptomatic. When clinically significant: back pain on palpation, reluctance to flex or extend the spine, altered gait. Management focuses on pain control and weight management." },
+        { name: "Degenerative Myelopathy (DM)", desc: "Progressive upper motor neuron disease of the thoracolumbar spinal cord, caused by a SOD1 gene mutation documented in Golden Retrievers among many other breeds (Awano et al. 2009, PNAS). DM is not painful — the initial presentation of progressive hind limb ataxia and weakness can mimic arthritic gait change but is distinguished by absent pain response. Genetic testing is available. No disease-modifying treatment exists; intensive physiotherapy can prolong ambulatory function." }
+      ]
+    }
+  },
+
+  paws: {
+    title: "Paws",
+    subtitle: "Podiatric & Nail Health",
+    chewyNote: {
+      level: "yellow",
+      text: "Since Chewy is itchier than average, paw licking after outdoor sessions is likely — it's one of the most consistent behavioral findings in atopic dogs. Pollen and contact allergens deposit on the paw fur and interdigital skin; Chewy licks them off, which introduces allergens orally and maintains a chronically moist interdigital environment favoring secondary yeast (Malassezia) infection. Post-walk paw rinse in warm water is one of the single most impactful daily habits for managing atopy. Also trim inter-pad hair before snowy hikes to prevent ice ball formation, exactly like in this photo."
+    },
+    science: {
+      icon: "🔬",
+      paragraphs: [
+        "Each paw consists of the digital pads (plantar surface of each digit), the metacarpal or metatarsal pad (central weight-bearing pad), the carpal pad on the forelimb, claws, and in some individuals a dewclaw. Paw pads contain a specialized multi-layered epidermis with a thick stratum corneum and underlying adipose tissue that functions as a biomechanical shock absorber and thermal insulator (Getty, 1975). During high-speed ball retrieval, peak pad loading forces are substantial.",
+        "The eccrine sweat glands of paw pads are among the few sites of active sweating in dogs. The resulting moisture, combined with keratinous debris and the skin microbiome, produces the characteristic yeasty or 'corn chip' odor from Malassezia and gram-negative bacteria that commonly colonize this niche — a normal finding in healthy dogs.",
+        "In snowy and icy environments — precisely where Chewy is photographed — paw pads face three simultaneous environmental challenges: mechanical abrasion from ice crystal formation, chemical irritation from road deicing agents (calcium chloride, magnesium chloride, sodium chloride), and ice-ball formation within the interdigital fur. Ice-balls can cause lacerations and induce an inflammatory response that is compounded in atopic individuals."
+      ]
+    },
+    care: {
+      icon: "💊",
+      items: [
+        "Rinse paws in warm water after every outdoor session — removes deposited allergens, road salt, and environmental debris before Chewy can lick them; particularly impactful for atopic dogs",
+        "Trim nails every 3–4 weeks — nail overgrowth displaces digital pad contact, alters ground-reaction force distribution, and cumulatively stresses digital flexor tendons and joints (Morgan et al., 2000)",
+        "Trim inter-pad and interdigital fur at every grooming session — prevents ice-ball formation in cold weather and reduces the moist niche that promotes Malassezia interdigital colonization",
+        "Apply beeswax-based paw wax (e.g., Musher's Secret) before winter hikes and sessions on salt-treated surfaces — physical barrier against both chemical and abrasive injury",
+        "Weekly digital and pad inspection: spread each toe and examine pad surfaces, interdigital skin, and nail bases for cuts, fissures, swelling, erythema, or foreign bodies",
+        "Monitor post-walk paw licking specifically — duration, frequency, and preferred sites provide clinical information about the allergen-atopy connection and can help your vet localize the allergic response"
+      ]
+    },
+    aging: {
+      icon: "⚠️",
+      warnings: [
+        { name: "Interdigital Furunculosis (Elevated risk for Chewy)", desc: "Painful, hemorrhagic, fluid-filled nodules in the interdigital spaces — caused by follicular rupture from mechanical trauma, chronic moisture (licking), or ingrown hairs. Goldendoodles are structurally predisposed due to dense interdigital coat. In atopic dogs, chronic paw licking perpetuates the moist environment. Requires veterinary treatment (antibiotics, anti-inflammatories, hydrotherapy); recurrence indicates unaddressed underlying atopy." },
+        { name: "Pad Hyperkeratosis (5+ years)", desc: "Idiopathic hyperkeratosis — excessive keratin deposition causing hard, crusty, or deeply fissured pad surfaces — is recognized in middle-aged to older dogs. Pads lose elasticity with age. Benign cases are managed with gentle debridement and emollient application. Must be differentiated from hereditary footpad hyperkeratosis, zinc-responsive dermatosis, and systemic conditions via dermatologic workup." },
+        { name: "Symmetrical Lupoid Onychodystrophy (SLO)", desc: "Immune-mediated disease causing progressive, symmetric onychoclasis (nail sloughing) — often presenting as sudden loss of multiple nails with pain. Diagnosis is by nail bed biopsy. Management involves omega-3 supplementation (which is specifically studied for SLO — Scott et al., 1995), niacinamide, vitamin E, and sometimes immunosuppression. Can recur without ongoing management." },
+        { name: "Digital Squamous Cell Carcinoma", desc: "The most common digital neoplasm in dogs; disproportionately affects dark-pigmented breeds. Frequently misdiagnosed initially as paronychia or chronic infection. Signs: swollen, painful single digit not responding to antibiotics; nail that avulses and fails to regrow; periungual erosion. Diagnosis requires radiography (lytic bone change) and histopathology. Amputation of the affected digit is standard; prognosis is better without bone invasion." },
+        { name: "Gait Alteration as Orthopedic Indicator", desc: "Reluctance to walk on hard surfaces, digital splaying, and intermittent unilateral weight-shifting can originate from pad pain but are also consistent early presentations of hip or elbow osteoarthritis — as Chewy redistributes weight to compensate for proximal joint discomfort. A veterinary orthopedic examination should systematically evaluate the entire limb before attributing gait change to a distal cause." }
+      ]
+    }
+  }
+
+}; // end DATA
+
+// ── Debug mode ───────────────────────────────────────────────────────────
+let debugMode = false;
+const wrapper = document.getElementById('photoWrapper');
+const debugLabel = document.getElementById('debugLabel');
+const debugIndicator = document.getElementById('debugIndicator');
+
+document.addEventListener('keydown', e => {
+  if (e.key === 'd' || e.key === 'D') {
+    debugMode = !debugMode;
+    wrapper.classList.toggle('debug-mode', debugMode);
+    debugIndicator.textContent = debugMode ? '📍 Coordinate mode ON (press D to exit)' : '';
+    if (!debugMode) debugLabel.classList.remove('visible');
+  }
+});
+wrapper.addEventListener('mousemove', e => {
+  if (!debugMode) return;
+  const r = wrapper.getBoundingClientRect(), img = document.getElementById('chewyPhoto');
+  debugLabel.textContent = `left: ${((e.clientX - r.left) / img.offsetWidth * 100).toFixed(1)}%  ·  top: ${((e.clientY - r.top) / img.offsetHeight * 100).toFixed(1)}%`;
+  debugLabel.classList.add('visible');
+});
+wrapper.addEventListener('mouseleave', () => { if (debugMode) debugLabel.classList.remove('visible'); });
+wrapper.addEventListener('click', e => {
+  if (!debugMode) return;
+  const r = wrapper.getBoundingClientRect(), img = document.getElementById('chewyPhoto');
+  const l = ((e.clientX - r.left) / img.offsetWidth * 100).toFixed(1);
+  const t = ((e.clientY - r.top)  / img.offsetHeight * 100).toFixed(1);
+  alert(`left: ${l}%\ntop: ${t}%`);
+});
+
+// ── Panel ────────────────────────────────────────────────────────────────
+let activeHotspot = null;
+
+document.querySelectorAll('.hotspot').forEach(hs => {
+  hs.addEventListener('click', function(e) {
+    if (debugMode) return;
+    const part = this.dataset.part;
+    if (activeHotspot === this) { closePanel(); return; }
+    if (activeHotspot) activeHotspot.classList.remove('active');
+    this.classList.add('active');
+    activeHotspot = this;
+    openPanel(DATA[part]);
+  });
+});
+
+document.getElementById('closeBtn').addEventListener('click', closePanel);
+
+function openPanel(info) {
+  document.getElementById('welcomeScreen').style.display = 'none';
+  const pv = document.getElementById('partView');
+  pv.style.display = 'flex';
+  document.getElementById('partTitle').textContent = info.title;
+  document.getElementById('partSubtitle').textContent = info.subtitle;
+
+  const body = document.getElementById('panelBody');
+  body.innerHTML = '';
+  body.appendChild(makeStatusCard(info.chewyNote));
+  body.appendChild(makeSection(info.science.icon, 'Scientific Overview', makeParagraphs(info.science.paragraphs)));
+  body.appendChild(makeSection(info.care.icon, 'Care Guide', makeList(info.care.items)));
+  if (info.longevity) {
+    body.appendChild(makeSection(info.longevity.icon, 'Life Extension Research', makeLongevityItems(info.longevity.items)));
+  }
+  body.appendChild(makeSection(info.aging.icon, 'Watch As He Ages', makeWarnings(info.aging.warnings)));
+
+  document.getElementById('infoPanel').classList.add('open');
+  body.scrollTop = 0;
+}
+
+function closePanel() {
+  if (activeHotspot) { activeHotspot.classList.remove('active'); activeHotspot = null; }
+  document.getElementById('infoPanel').classList.remove('open');
+  document.getElementById('welcomeScreen').style.display = 'flex';
+  document.getElementById('partView').style.display = 'none';
+}
+
+function makeStatusCard(note) {
+  const card = document.createElement('div');
+  card.className = `chewy-card ${note.level}`;
+  const header = document.createElement('div');
+  header.className = 'chewy-card-header';
+  const emoji = document.createElement('span');
+  emoji.textContent = note.level === 'green' ? '✅' : note.level === 'yellow' ? '⚠️' : '🔴';
+  const label = document.createElement('span');
+  label.className = 'card-label';
+  label.textContent = note.level === 'green' ? "Chewy's Status — Good"
+                    : note.level === 'yellow' ? "Chewy's Status — Monitor"
+                    : "Chewy's Status — Priority";
+  header.appendChild(emoji);
+  header.appendChild(label);
+  const text = document.createElement('p');
+  text.textContent = note.text;
+  card.appendChild(header);
+  card.appendChild(text);
+  return card;
+}
+
+function makeSection(icon, title, contentEl) {
+  const section = document.createElement('div');
+  section.className = 'section';
+  const toggle = document.createElement('div');
+  toggle.className = 'section-toggle';
+  toggle.innerHTML = `<div class="section-icon-box">${icon}</div><span class="section-title">${title}</span><span class="section-chevron">▾</span>`;
+  const body = document.createElement('div');
+  body.className = 'section-body';
+  body.appendChild(contentEl);
+  toggle.addEventListener('click', () => {
+    body.classList.toggle('collapsed');
+    toggle.classList.toggle('collapsed');
+  });
+  section.appendChild(toggle);
+  section.appendChild(body);
+  return section;
+}
+
+function makeParagraphs(texts) {
+  const div = document.createElement('div');
+  texts.forEach(t => {
+    const p = document.createElement('p');
+    p.className = 'sci-p';
+    p.textContent = t;
+    div.appendChild(p);
+  });
+  return div;
+}
+
+function makeList(items) {
+  const ul = document.createElement('ul');
+  ul.className = 'care-list';
+  items.forEach(item => {
+    const li = document.createElement('li');
+    li.textContent = item;
+    ul.appendChild(li);
+  });
+  return ul;
+}
+
+function makeWarnings(warnings) {
+  const div = document.createElement('div');
+  warnings.forEach(w => {
+    const card = document.createElement('div');
+    card.className = 'warn-card';
+    const name = document.createElement('span');
+    name.className = 'warn-name';
+    name.textContent = w.name;
+    const desc = document.createElement('span');
+    desc.className = 'warn-desc';
+    desc.textContent = w.desc;
+    card.appendChild(name);
+    card.appendChild(desc);
+    div.appendChild(card);
+  });
+  return div;
+}
+
+function makeLongevityItems(items) {
+  const div = document.createElement('div');
+  items.forEach(item => {
+    const el = document.createElement('div');
+    el.className = 'longevity-item';
+
+    const badge = document.createElement('span');
+    badge.className = `longevity-badge ${item.badge}`;
+    badge.textContent = item.badgeText;
+
+    const name = document.createElement('div');
+    name.className = 'longevity-item-name';
+    name.textContent = item.name;
+
+    const desc = document.createElement('div');
+    desc.className = 'longevity-item-desc';
+    desc.textContent = item.desc;
+
+    el.appendChild(badge);
+    el.appendChild(name);
+    el.appendChild(desc);
+    div.appendChild(el);
+  });
+  return div;
+}
+</script>
+</body>
+</html>

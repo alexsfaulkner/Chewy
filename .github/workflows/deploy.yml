@@ -4,7 +4,6 @@ on:
   push:
     branches:
       - ms-copilot
-      - copilot/deploy-updated-files
   workflow_dispatch:
 
 permissions:

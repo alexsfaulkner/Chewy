@@ -21,7 +21,7 @@ To enable GitHub Pages for this repository:
 
 ### Automatic Deployment
 
-Once GitHub Pages is enabled, the site deploys automatically when changes are pushed to the `ms-copilot` branch.
+Once GitHub Pages is enabled, the site deploys automatically when changes are pushed to the `alex's-branch` branch.
 
 ### Manual Deployment
 

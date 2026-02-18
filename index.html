@@ -68,16 +68,24 @@
     /* Hotspots */
     .hotspot {
       position: absolute;
-      width: 26px;
-      height: 26px;
-      border-radius: 50%;
-      background: rgba(255,255,255,0.85);
-      border: 2.5px solid #fff;
+      width: 32px;
+      height: 32px;
       cursor: pointer;
       transform: translate(-50%, -50%);
-      transition: transform 0.18s ease, background 0.18s ease, box-shadow 0.18s ease;
-      animation: hsPulse 2.8s ease-in-out infinite;
+      transition: transform 0.18s ease, opacity 0.18s ease, filter 0.18s ease;
       z-index: 10;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 24px;
+      line-height: 1;
+      opacity: 0.5;
+      filter: drop-shadow(0 1px 3px rgba(0,0,0,0.5));
+      animation: hsPulse 2.8s ease-in-out infinite;
+    }
+    .hotspot::before {
+      content: "🐾";
+      filter: brightness(0) invert(1);
     }
     .hotspot::after {
       content: attr(data-label);
@@ -99,15 +107,14 @@
     }
     .hotspot:hover::after, .hotspot.active::after { opacity: 1; }
     .hotspot:hover, .hotspot.active {
-      background: #c62828;
-      border-color: #fff;
-      transform: translate(-50%, -50%) scale(1.3);
+      opacity: 1;
+      transform: translate(-50%, -50%) scale(1.2);
       animation: none;
-      box-shadow: 0 0 0 5px rgba(198,40,40,0.3);
+      filter: drop-shadow(0 0 6px rgba(255,255,255,0.7));
     }
     @keyframes hsPulse {
-      0%, 100% { box-shadow: 0 0 0 0 rgba(255,255,255,0.6); }
-      55%       { box-shadow: 0 0 0 10px rgba(255,255,255,0); }
+      0%, 100% { filter: drop-shadow(0 1px 3px rgba(0,0,0,0.5)); }
+      55%       { filter: drop-shadow(0 0 8px rgba(255,255,255,0.4)); }
     }
 
     /* Debug */
@@ -237,15 +244,15 @@
         Positions: left/top as % of rendered image (3024 × 4032 px, 3:4 portrait).
         Press D to enable coordinate helper for fine-tuning.
       -->
-      <div class="hotspot" data-part="brain"  data-label="Brain & Cognition"  style="left:49%; top:14%"></div>
-      <div class="hotspot" data-part="eyes"   data-label="Eyes"               style="left:49%; top:27%"></div>
-      <div class="hotspot" data-part="ears"   data-label="Ears"               style="left:27%; top:19%"></div>
-      <div class="hotspot" data-part="nose"   data-label="Nose"               style="left:49%; top:37%"></div>
-      <div class="hotspot" data-part="mouth"  data-label="Teeth & Mouth"      style="left:49%; top:43%"></div>
-      <div class="hotspot" data-part="heart"  data-label="Heart & Longevity"  style="left:44%; top:52%"></div>
-      <div class="hotspot" data-part="coat"   data-label="Coat & Skin"        style="left:57%; top:58%"></div>
-      <div class="hotspot" data-part="joints" data-label="Joints & Hips"      style="left:49%; top:72%"></div>
-      <div class="hotspot" data-part="paws"   data-label="Paws"               style="left:36%; top:82%"></div>
+      <div class="hotspot" data-part="brain"  data-label="Brain & Cognition"  style="left:48%; top:36%"></div>
+      <div class="hotspot" data-part="eyes"   data-label="Eyes"               style="left:47%; top:41%"></div>
+      <div class="hotspot" data-part="ears"   data-label="Ears"               style="left:35%; top:41%"></div>
+      <div class="hotspot" data-part="nose"   data-label="Nose"               style="left:48%; top:46%"></div>
+      <div class="hotspot" data-part="mouth"  data-label="Teeth & Mouth"      style="left:50%; top:49%"></div>
+      <div class="hotspot" data-part="heart"  data-label="Heart & Longevity"  style="left:44%; top:62%"></div>
+      <div class="hotspot" data-part="coat"   data-label="Coat & Skin"        style="left:30%; top:57%"></div>
+      <div class="hotspot" data-part="joints" data-label="Joints & Hips"      style="left:25%; top:69%"></div>
+      <div class="hotspot" data-part="paws"   data-label="Paws"               style="left:35%; top:83%"></div>
     </div>
   </div>
 
